@@ -20,12 +20,14 @@ BRITISH_ACADEMY_URL = "https://www.thebritishacademy.ac.uk/funding/"
 NIHR_URL = "https://www.nihr.ac.uk/funding-opportunities"
 WELLCOME_URL = "https://wellcome.org/research-funding/schemes"
 UKRI_URL = "https://www.ukri.org/opportunity/"
+SSA_URL = "https://www.addiction-ssa.org/funding/"
 
 SOURCE_URLS = {
     "The British Academy": BRITISH_ACADEMY_URL,
     "NIHR": NIHR_URL,
     "Wellcome": WELLCOME_URL,
     "UKRI": UKRI_URL,
+    "SSA": SSA_URL,
 }
 
 FUNDER_NAMES = {
@@ -33,6 +35,7 @@ FUNDER_NAMES = {
     "NIHR": "National Institute for Health and Care Research",
     "Wellcome": "Wellcome",
     "UKRI": "UK Research and Innovation",
+    "SSA": "Society for the Study of Addiction",
 }
 
 ALLOWED_HOSTS = {
@@ -44,6 +47,8 @@ ALLOWED_HOSTS = {
     "wellcome.org",
     "www.ukri.org",
     "ukri.org",
+    "www.addiction-ssa.org",
+    "addiction-ssa.org",
 }
 
 TOPIC_PATTERNS = {
@@ -73,6 +78,38 @@ TOPIC_PATTERNS = {
         r"\btrauma\b", r"\bco-?morbid(?:ity|ities)\b",
     ],
 }
+
+# Verified SSA programme URLs. Some cards on its directory wrap their
+# headings in non-standard anchors, so these also provide safe fallbacks.
+# Programmes can be closed while remaining listed on the funding directory.
+SSA_SCHEMES = {
+    "bursaries": "/funding/flagship-research-leadership-programme/bursaries/",
+    "pre-doctoral support": "/funding/flagship-research-leadership-programme/pre-doctoral-support/",
+    "phd studentships": "/funding/phd-studentships/",
+    "post-doctoral support": "/funding/post-doctoral-development/",
+    "fellowships": "/funding/fellowships/",
+    "travelling scholarships": "/funding/travelling-scholarships/",
+    "engagement grants": "/funding/engagement-grants/",
+    "early career researcher prize": "/funding/fred-yates-prize-for-early-career-researchers/",
+    "impact prize": "/funding/impact-prize/",
+    # The events / special-interest-groups programme is included only when
+    # a valid link is actually present on the SSA directory.
+    "special interest groups and events": None,
+}
+
+SSA_SUMMARIES = {
+    "bursaries": "Funding for postgraduate study and professional development in addiction research.",
+    "pre-doctoral support": "Salary support for developing a PhD application in addiction science.",
+    "phd studentships": "Support to design and conduct doctoral research in addiction science.",
+    "post-doctoral support": "Salary support while preparing postdoctoral fellowship applications.",
+    "fellowships": "Funding for a three-year postdoctoral programme in addiction research.",
+    "travelling scholarships": "International visits and networking for addiction researchers.",
+    "engagement grants": "Initiatives improving understanding of addiction and treatment.",
+    "early career researcher prize": "Annual award recognising early-career contributions to addiction science.",
+    "impact prize": "Award recognising public-facing impact of addiction research.",
+    "special interest groups and events": "Support for collaborative events and special interest groups in addiction science.",
+}
+
 
 BROAD_PATTERNS = [
     r"\bresearcher[- ]led\b",
@@ -218,6 +255,13 @@ def _valid_funding_href(href: str, source: str) -> bool:
         return False
     base_url = SOURCE_URLS.get(source, href)
     path = urlparse(urljoin(base_url, href)).path.rstrip("/")
+    if source == "SSA":
+        parsed = urlparse(urljoin(base_url, href))
+        return (
+            parsed.hostname in {"addiction-ssa.org", "www.addiction-ssa.org"}
+            and path.startswith("/funding/")
+            and path != "/funding"
+        )
     if source == "NIHR":
         return path.startswith("/funding/") and path.count("/") >= 2
     if source == "UKRI":
@@ -283,7 +327,130 @@ def _section_text(soup: BeautifulSoup, heading_pattern: str, max_chars: int = 50
     return " ".join(parts)[:max_chars]
 
 
+def parse_ssa_listing(html: str, base_url: str = SSA_URL) -> list[Opportunity]:
+    """Read SSA funding *schemes*, not arbitrary articles or site navigation.
+
+    SSA lists permanent programmes rather than a conventional paginated calls
+    feed. Their current opening status is determined by each programme page.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for unwanted in soup(["script", "style", "noscript", "svg", "nav", "footer", "form"]):
+        unwanted.decompose()
+    main = soup.find("main") or soup
+    seen = set()
+    opportunities = []
+    for heading in main.find_all(["h2", "h3", "h4", "h5"]):
+        title = _clean(heading.get_text(" ", strip=True))
+        key = title.casefold()
+        if key not in SSA_SCHEMES:
+            continue
+
+        # A linked card can wrap the entire heading; other designs link the
+        # heading text itself or put the link in the immediate card container.
+        anchors = []
+        parent_anchor = heading.find_parent("a", href=True)
+        if parent_anchor is not None:
+            anchors.append(parent_anchor)
+        anchors.extend(heading.find_all("a", href=True))
+        card = heading.parent
+        for _ in range(3):
+            if isinstance(card, Tag):
+                anchors.extend(card.find_all("a", href=True, limit=6))
+                card = card.parent
+        linked_url = next(
+            (urljoin(base_url, a["href"]) for a in anchors if _valid_funding_href(a["href"], "SSA")),
+            None,
+        )
+        canonical = SSA_SCHEMES[key]
+        url = urljoin(base_url, canonical) if canonical else linked_url
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        summary = SSA_SUMMARIES[key]
+        # Preserve the scheme's own short description from the directory.
+        sibling = heading.find_next(["p", "h2", "h3", "h4", "h5"])
+        if sibling is not None and sibling.name == "p":
+            candidate = _clean(sibling.get_text(" ", strip=True))
+            if 12 <= len(candidate) <= 400:
+                summary = candidate
+        opportunity = Opportunity(
+            source="SSA",
+            funder=FUNDER_NAMES["SSA"],
+            title=title,
+            url=url,
+            summary=summary,
+            programme="SSA funding and prizes",
+            status="Unknown",  # Filled from the current scheme detail page.
+        )
+        classify_opportunity(opportunity)
+        opportunities.append(opportunity)
+    return opportunities
+
+
+def _ssa_deadline(text: str) -> date | None:
+    labelled = _labelled_date(text, ["closing date", "deadline", "applications close"])
+    if labelled:
+        return labelled
+    month = r"January|February|March|April|May|June|July|August|September|October|November|December"
+    for pattern in (
+        rf"\b(?:closed|close|closes|closing)\s+(?:on|at)\s+(\d{{1,2}}\s+(?:{month})\s+\d{{4}})",
+        rf"\buntil\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s*(\d{{1,2}}\s+(?:{month})\s+\d{{4}})",
+    ):
+        match = re.search(pattern, text, re.I)
+        if match:
+            return _parse_date(match.group(1))
+    return None
+
+
+def _ssa_status(lead: str, deadline: date | None) -> str:
+    """Use *current round* notices, avoiding historical open dates as status."""
+    today = date.today()
+    text = lead.lower()
+    if re.search(r"(?:applications? (?:are |have )?(?:currently |now )?closed|current round.{0,90}closed|"
+                 r"applications? closed|scheme (?:is )?under review|funding (?:is )?fully allocated|"
+                 r"all available funding.{0,40}allocated|applications? for the 20\d{2} prize.{0,35}closed)", text):
+        return "Closed"
+    if deadline and deadline < today:
+        return "Closed"
+    if re.search(r"(?:will open (?:for applications )?soon|opening soon|open for applications soon)", text):
+        return "Opening soon"
+    if re.search(r"(?:applications? (?:are |is )?(?:now |currently )?open|accepting applications|"
+                 r"apply now|applications will remain open)", text):
+        return "Closing soon" if deadline and deadline <= today + timedelta(days=14) else "Open"
+    if deadline:
+        return "Closing soon" if deadline <= today + timedelta(days=14) else "Unknown"
+    return "Unknown"
+
+
+def enrich_ssa_opportunity(opportunity: Opportunity, html: str) -> Opportunity:
+    """Extract status, eligibility and amounts from SSA's individual scheme page."""
+    soup = BeautifulSoup(html, "html.parser")
+    for unwanted in soup(["script", "style", "noscript", "svg", "nav", "footer", "form"]):
+        unwanted.decompose()
+    main = soup.find("main") or soup.find("article") or soup
+    paragraphs = [
+        _clean(p.get_text(" ", strip=True)) for p in main.find_all("p")
+        if len(_clean(p.get_text(" ", strip=True))) >= 20
+    ]
+    # Initial notices describe the CURRENT application round. Later sections
+    # may contain historical closing dates, so don't infer from the full page.
+    lead = " ".join(paragraphs[:6])[:1700]
+    deadline = _ssa_deadline(lead)
+    opportunity.deadline = deadline
+    opportunity.status = _ssa_status(lead, deadline)
+    if paragraphs and len(paragraphs[0]) >= 45:
+        opportunity.summary = paragraphs[0][:700]
+    opportunity.amount = _extract_amount(" ".join(paragraphs[:25]))
+    opportunity.eligibility = _section_text(
+        soup, r"^(?:eligibility|who can apply|am i eligible|criteria)"
+    )
+    classify_opportunity(opportunity, extra_text=" ".join(paragraphs[:25])[:5000])
+    return opportunity
+
+
 def parse_listing(html: str, base_url: str, source: str) -> list[Opportunity]:
+    if source == "SSA":
+        return parse_ssa_listing(html, base_url)
     soup = BeautifulSoup(html, "html.parser")
     for unwanted in soup(["script", "style", "noscript", "svg", "nav", "footer", "form"]):
         unwanted.decompose()
@@ -327,6 +494,8 @@ def parse_listing(html: str, base_url: str, source: str) -> list[Opportunity]:
 
 
 def enrich_opportunity(opportunity: Opportunity, html: str) -> Opportunity:
+    if opportunity.source == "SSA":
+        return enrich_ssa_opportunity(opportunity, html)
     soup = BeautifulSoup(html, "html.parser")
     for unwanted in soup(["script", "style", "noscript", "svg", "nav", "footer", "form"]):
         unwanted.decompose()
@@ -375,6 +544,8 @@ def classify_opportunity(opportunity: Opportunity, extra_text: str = "") -> Oppo
             matched_topics.append(topic)
             matched_keywords.extend(topic_hits)
     broad = any(re.search(pattern, haystack, flags=re.I) for pattern in BROAD_PATTERNS)
+    if opportunity.source == "SSA" and "Addiction" not in matched_topics:
+        matched_topics.append("Addiction")
     opportunity.matched_topics = tuple(dict.fromkeys(matched_topics))
     opportunity.matched_keywords = tuple(dict.fromkeys(matched_keywords))
     opportunity.broad_call = broad
@@ -391,9 +562,13 @@ def _fetch_source(source: str, max_pages: int, enrich_details: bool) -> tuple[li
     errors: list[str] = []
     known_urls: set[str] = set()
 
-    for page_number in range(1, max_pages + 1):
+    # SSA has one programme directory; each programme supplies its own status.
+    page_count = 1 if source == "SSA" else max_pages
+    for page_number in range(1, page_count + 1):
         try:
-            if source in {"NIHR", "UKRI", "Wellcome"}:
+            if source == "SSA":
+                params = None
+            elif source in {"NIHR", "UKRI", "Wellcome"}:
                 params = {"page": page_number} if page_number > 1 else None
             else:
                 params = {"page": page_number, "order": "-last_published_at"} if page_number > 1 else None
@@ -523,6 +698,7 @@ def records_to_dataframe(opportunities: list[Opportunity]) -> pd.DataFrame:
                 "Programme": item.programme,
                 "Matched topics": ", ".join(item.matched_topics) or ("Broad remit" if item.broad_call else ""),
                 "Matched keywords": ", ".join(item.matched_keywords),
+                "Amount": item.amount,
                 "Summary": item.summary,
                 "AI summary": item.ai_summary,
                 "AI assessment": (

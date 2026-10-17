@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from ai_enrichment import GROQ_MODELS, enrich_with_groq
+from auth import logout, require_login
 from funding_scraper import (
     Opportunity,
     filter_opportunities,
@@ -22,9 +23,11 @@ st.set_page_config(
     layout="wide",
 )
 
+require_login()
+
 st.title("Funding Opportunity Finder")
 st.caption(
-    "Find British Academy, NIHR, Wellcome and UKRI opportunities related to "
+    "Find British Academy, NIHR, Wellcome, UKRI and SSA opportunities related to "
     "alcohol, addiction, mental health and connected research areas."
 )
 
@@ -38,11 +41,16 @@ def configured_groq_key() -> str:
         return ""
 
 with st.sidebar:
+    st.header("NARA-CAMHR")
+    st.caption("Signed in as NARA-CAMHR@hull.ac.uk")
+    if st.button("Log out", use_container_width=True):
+        logout()
+    st.divider()
     st.header("Search settings")
     sources = st.multiselect(
         "Funding sources",
-        ["The British Academy", "NIHR", "Wellcome", "UKRI"],
-        default=["The British Academy", "NIHR", "Wellcome", "UKRI"],
+        ["The British Academy", "NIHR", "Wellcome", "UKRI", "SSA"],
+        default=["The British Academy", "NIHR", "Wellcome", "UKRI", "SSA"],
     )
     topics = st.multiselect(
         "Research topics",
@@ -66,7 +74,7 @@ with st.sidebar:
     statuses = st.multiselect(
         "Status",
         ["Open", "Closing soon", "Opening soon", "Closed", "Unknown"],
-        default=["Open", "Closing soon", "Opening soon", "Unknown"],
+        default=["Open", "Closing soon", "Opening soon", "Unknown", "Closed"],
     )
     date_filter = st.selectbox(
         "Date filter",
@@ -89,6 +97,7 @@ with st.sidebar:
         if isinstance(custom_dates, tuple) and len(custom_dates) == 2:
             custom_start, custom_end = custom_dates
 
+    st.caption("SSA funding programmes are read from its funding directory and individual scheme pages; closed programmes are labelled, not treated as open calls.")
     max_pages = st.slider(
         "Pages to inspect per source",
         min_value=1,
