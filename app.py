@@ -29,9 +29,96 @@ require_login()
 
 st.title("Funding Opportunity Finder")
 st.caption(
-    "Find research grants, bursaries, transport support and travel allowances from "
-    "the British Academy, NIHR, Wellcome, UKRI and SSA."
+    "Find main research funding, grants, fellowships, bursaries, transport support "
+    "and travel allowances from the British Academy, NIHR, Wellcome, UKRI and SSA."
 )
+
+# This category is displayed alongside the three support categories from the
+# scraper. It does not alter the scraper's original funding classification.
+MAIN_FUNDING = "Main research funding"
+FUNDING_FILTER_OPTIONS = (MAIN_FUNDING, *SUPPORT_TYPES)
+
+
+def select_funding_categories(
+    opportunities: list[Opportunity],
+    selected_categories: list[str],
+    topics: list[str],
+    custom_query: str,
+    include_broad: bool,
+    statuses: list[str],
+    date_filter: str,
+    custom_start: date | None,
+    custom_end: date | None,
+    use_ai_relevance: bool,
+    include_general_support: bool,
+    support_arrangement: str,
+) -> list[Opportunity]:
+    """Apply funding-category choices without hiding the main research grants.
+
+    Selecting nothing means 'All funding types'. A main grant can cover travel
+    as an eligible project expense, so it remains a main funding opportunity.
+    Dedicated travel awards and bursaries appear under their support category.
+    """
+    options = set(selected_categories)
+    requested_support = [name for name in SUPPORT_TYPES if name in options]
+
+    # Avoid repeating the same arguments in the two possible filter passes.
+    common_filters = dict(
+        opportunities=opportunities,
+        topics=topics,
+        custom_query=custom_query,
+        include_broad=include_broad,
+        statuses=statuses,
+        date_filter=date_filter,
+        custom_start=custom_start,
+        custom_end=custom_end,
+        use_ai_relevance=use_ai_relevance,
+    )
+
+    # Nothing selected: preserve the existing behaviour (all categories).
+    if not options:
+        return filter_opportunities(
+            **common_filters,
+            funding_types=[],
+            include_general_support=include_general_support,
+            support_arrangement=support_arrangement,
+        )
+
+    # A main grant is not a standalone bursary or travel award. A grant that
+    # allows travel expenses as part of its budget is still main research funding.
+    selected_by_url: dict[str, Opportunity] = {}
+    if MAIN_FUNDING in options:
+        main_candidates = filter_opportunities(
+            **common_filters,
+            funding_types=[],
+            include_general_support=False,
+            support_arrangement="Any arrangement",
+        )
+        for opportunity in main_candidates:
+            if not opportunity.support_basis.startswith("Dedicated"):
+                selected_by_url[opportunity.url] = opportunity
+
+    # Keep the original support matching logic. Selecting more than one type
+    # works as an OR filter, so a grant is displayed only once.
+    if requested_support:
+        support_candidates = filter_opportunities(
+            **common_filters,
+            funding_types=requested_support,
+            include_general_support=include_general_support,
+            support_arrangement=support_arrangement,
+        )
+        for opportunity in support_candidates:
+            selected_by_url[opportunity.url] = opportunity
+
+    return sorted(
+        selected_by_url.values(),
+        key=lambda item: (
+            item.relevance_score,
+            item.opening_date or date.min,
+            item.deadline or date.max,
+        ),
+        reverse=True,
+    )
 
 
 def configured_groq_key() -> str:
@@ -62,12 +149,20 @@ with st.sidebar:
         default=["Alcohol", "Addiction", "Mental health", "Related health"],
     )
     funding_types = st.multiselect(
-        "Funding support type",
-        list(SUPPORT_TYPES),
+        "Funding type",
+        list(FUNDING_FILTER_OPTIONS),
         default=[],
         placeholder="All funding types",
-        help="Leave empty for all types, or select transport, bursary and/or travel support.",
+        help=(
+            "Leave empty to see all funding. Select 'Main research funding' for "
+            "research grants, fellowships and other non-standalone support, "
+            "or choose any combination of travel, transport and bursary funding."
+        ),
     )
+    if not funding_types:
+        st.caption("Showing: All funding types")
+    else:
+        st.caption("Showing: " + ", ".join(funding_types))
     support_arrangement = st.selectbox(
         "Support arrangement",
         ["Any arrangement", "Dedicated awards only", "Costs within larger grants only"],
@@ -205,8 +300,11 @@ if st.session_state.fetch_errors:
             st.warning(error)
 
 if st.session_state.opportunities:
-    filtered = filter_opportunities(
+    # Apply the chosen funding category to the already fetched results.
+    # This restores main research grants as a selectable category.
+    filtered = select_funding_categories(
         st.session_state.opportunities,
+        selected_categories=funding_types,
         topics=topics,
         custom_query=custom_query,
         include_broad=include_broad,
@@ -215,7 +313,6 @@ if st.session_state.opportunities:
         custom_start=custom_start,
         custom_end=custom_end,
         use_ai_relevance=use_ai_relevance,
-        funding_types=funding_types,
         include_general_support=include_general_support,
         support_arrangement=support_arrangement,
     )
@@ -225,7 +322,9 @@ if st.session_state.opportunities:
     m1.metric("Fetched", len(st.session_state.opportunities))
     m2.metric("Matching", len(filtered))
     m3.metric("Open / closing soon", sum(x.status in {"Open", "Closing soon"} for x in filtered))
-    m4.metric("Support-related", sum(bool(item.funding_types) for item in filtered))
+    m4.metric("Main research funding", sum(
+        not item.support_basis.startswith("Dedicated") for item in filtered
+    ))
 
     st.caption(
         "Funding categories are identified from funder descriptions. The Support arrangement "
