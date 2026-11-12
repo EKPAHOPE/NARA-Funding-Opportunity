@@ -11,6 +11,8 @@ from ai_enrichment import GROQ_MODELS, enrich_with_groq
 from auth import logout, require_login
 from funding_scraper import (
     Opportunity,
+    SUPPORT_TYPES,
+    SOURCE_URLS,
     filter_opportunities,
     fetch_all_sources,
     records_to_dataframe,
@@ -27,8 +29,8 @@ require_login()
 
 st.title("Funding Opportunity Finder")
 st.caption(
-    "Find British Academy, NIHR, Wellcome, UKRI and SSA opportunities related to "
-    "alcohol, addiction, mental health and connected research areas."
+    "Find research grants, bursaries, transport support and travel allowances from "
+    "the British Academy, NIHR, Wellcome, UKRI and SSA."
 )
 
 
@@ -47,15 +49,37 @@ with st.sidebar:
         logout()
     st.divider()
     st.header("Search settings")
+    # Populate sources from the scraper configuration so a new official
+    # funder cannot be silently omitted from the interface.
     sources = st.multiselect(
         "Funding sources",
-        ["The British Academy", "NIHR", "Wellcome", "UKRI", "SSA"],
-        default=["The British Academy", "NIHR", "Wellcome", "UKRI", "SSA"],
+        list(SOURCE_URLS),
+        default=list(SOURCE_URLS),
     )
     topics = st.multiselect(
         "Research topics",
         ["Alcohol", "Addiction", "Mental health", "Related health"],
         default=["Alcohol", "Addiction", "Mental health", "Related health"],
+    )
+    funding_types = st.multiselect(
+        "Funding support type",
+        list(SUPPORT_TYPES),
+        default=[],
+        placeholder="All funding types",
+        help="Leave empty for all types, or select transport, bursary and/or travel support.",
+    )
+    support_arrangement = st.selectbox(
+        "Support arrangement",
+        ["Any arrangement", "Dedicated awards only", "Costs within larger grants only"],
+        help="Separate individual travel/bursary awards from travel costs allowed under larger research grants.",
+    )
+    include_general_support = st.checkbox(
+        "Include general travel and bursary funding",
+        value=True,
+        help=(
+            "Shows a relevant travel/bursary award even when alcohol, addiction "
+            "or mental health is not explicitly named. Always check the funder's eligibility."
+        ),
     )
     custom_query = st.text_input(
         "Additional search terms",
@@ -97,7 +121,11 @@ with st.sidebar:
         if isinstance(custom_dates, tuple) and len(custom_dates) == 2:
             custom_start, custom_end = custom_dates
 
-    st.caption("SSA funding programmes are read from its funding directory and individual scheme pages; closed programmes are labelled, not treated as open calls.")
+    st.caption(
+        "All five funders are checked for relevant grants and support. Specialist schemes cover "
+        "NIHR training, British Academy ECR Network, UKRI travel awards, Wellcome career "
+        "grants and SSA programmes. Travel costs within a grant are not a standalone award."
+    )
     max_pages = st.slider(
         "Pages to inspect per source",
         min_value=1,
@@ -187,6 +215,9 @@ if st.session_state.opportunities:
         custom_start=custom_start,
         custom_end=custom_end,
         use_ai_relevance=use_ai_relevance,
+        funding_types=funding_types,
+        include_general_support=include_general_support,
+        support_arrangement=support_arrangement,
     )
     df = records_to_dataframe(filtered)
 
@@ -194,8 +225,33 @@ if st.session_state.opportunities:
     m1.metric("Fetched", len(st.session_state.opportunities))
     m2.metric("Matching", len(filtered))
     m3.metric("Open / closing soon", sum(x.status in {"Open", "Closing soon"} for x in filtered))
-    m4.metric("Sources", df["Source"].nunique() if not df.empty else 0)
+    m4.metric("Support-related", sum(bool(item.funding_types) for item in filtered))
 
+    st.caption(
+        "Funding categories are identified from funder descriptions. The Support arrangement "
+        "column distinguishes dedicated awards from expenses within wider grants. "
+        "A zero count is not proof that a funder never offers that support."
+    )
+
+    # Show coverage for EVERY selected funding body, even when no support award
+    # has been discovered. Counts use actual fetched listings, not assumptions.
+    coverage_rows = []
+    for funder in sources:
+        items = [item for item in st.session_state.opportunities if item.source == funder]
+        coverage_rows.append({
+            "Funding body": funder,
+            "Fetched": len(items),
+            "Transport": sum("Transport funding" in x.funding_types for x in items),
+            "Bursaries": sum("Bursaries" in x.funding_types for x in items),
+            "Travel allowance": sum("Travel allowances" in x.funding_types for x in items),
+            "Dedicated awards": sum(x.support_basis.startswith("Dedicated") for x in items),
+        })
+    with st.expander("Funding support coverage by source", expanded=False):
+        st.dataframe(pd.DataFrame(coverage_rows), hide_index=True, use_container_width=True)
+        st.caption(
+            "Counts are from this fetch only. A source with zero matches may have unlisted "
+            "programmes, restricted grants or pages that could not be retrieved."
+        )
     if df.empty:
         st.info(
             "No opportunities matched these filters. Try enabling broad calls, "
@@ -221,8 +277,9 @@ if st.session_state.opportunities:
             sheet.auto_filter.ref = sheet.dimensions
             widths = {
                 "A": 22, "B": 48, "C": 18, "D": 17, "E": 17,
-                "F": 18, "G": 26, "H": 28, "I": 16, "J": 55,
-                "K": 55, "L": 18, "M": 40, "N": 36, "O": 12, "P": 18,
+                "F": 28, "G": 28, "H": 34, "I": 58, "J": 26,
+                "K": 28, "L": 18, "M": 55, "N": 55, "O": 18,
+                "P": 40, "Q": 36, "R": 12, "S": 18,
             }
             for column, width in widths.items():
                 sheet.column_dimensions[column].width = width

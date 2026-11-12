@@ -22,6 +22,15 @@ WELLCOME_URL = "https://wellcome.org/research-funding/schemes"
 UKRI_URL = "https://www.ukri.org/opportunity/"
 SSA_URL = "https://www.addiction-ssa.org/funding/"
 
+# NIHR opportunities also appear on regional and school websites. These are
+# official NIHR programme pages, not general-purpose web search results.
+NIHR_EXTRA_PAGES = (
+    "https://sphr.nihr.ac.uk/prevention/funding-opportunities/",
+    "https://cambridgebrc.nihr.ac.uk/our-research/clinical-research-at-cuh/applying-for-funding-2/funding-sources/individual-training-awards/nihr-training-awards/",
+)
+
+# All original funding bodies remain enabled. Supplementary scheme pages below
+# fill gaps where a funder advertises travel support away from its main feed.
 SOURCE_URLS = {
     "The British Academy": BRITISH_ACADEMY_URL,
     "NIHR": NIHR_URL,
@@ -29,6 +38,89 @@ SOURCE_URLS = {
     "UKRI": UKRI_URL,
     "SSA": SSA_URL,
 }
+
+# These are official programme pages checked against the funders' websites.
+# They are fetched LIVE: if a page fails, the app emits a warning instead of
+# creating an unsupported funding result. Do not infer an open call from this
+# catalogue; dates and status must be extracted from the live page.
+FEATURED_PROGRAMMES = {
+    "The British Academy": (
+        {
+            "title": "Early Career Researcher Network travel and development support",
+            "url": "https://www.thebritishacademy.ac.uk/early-career-researcher-network/early-career-researcher-network-what-we-offer/",
+            "summary": (
+                "Network members can request up to £300 for relevant conferences, "
+                "training, workshops and travel for professional development; "
+                "event travel and accommodation support is also described."
+            ),
+            "eligibility": "For eligible British Academy Early Career Researcher Network members.",
+            "programme": "ECR Network development fund and travel support",
+            "amount": "Up to £300 (development stream)",
+        },
+    ),
+    "NIHR": (
+        {
+            "title": "NIHR Pre-Application Support Fund",
+            "url": "https://www.nihr.ac.uk/career-development/research-career-funding-programmes/supporting-career-development/pre-application-support-fund",
+            "summary": (
+                "Flexible funding to prepare an NIHR career development award, "
+                "including relevant training and placements; exact travel and "
+                "conference cost eligibility depends on the current award guidance."
+            ),
+            "eligibility": "Applicants developing an NIHR career development award.",
+            "programme": "NIHR career development support",
+        },
+    ),
+    "Wellcome": (
+        {
+            "title": "Wellcome Early-Career Awards",
+            "url": "https://wellcome.org/research-funding/schemes/wellcome-early-career-awards",
+            "summary": (
+                "Research award covering justified project-related travel, "
+                "conference attendance and subsistence as part of the funded research."
+            ),
+            "eligibility": "For eligible early-career researchers; see the official scheme rules.",
+            "programme": "Early-career research award",
+        },
+        {
+            "title": "Wellcome Career Development Awards",
+            "url": "https://wellcome.org/research-funding/schemes/wellcome-career-development-awards",
+            "summary": (
+                "Career development award allowing justified travel, conference "
+                "attendance and subsistence costs within a research project."
+            ),
+            "eligibility": "For eligible mid-career researchers; see the official scheme rules.",
+            "programme": "Career development research award",
+        },
+    ),
+    "UKRI": (
+        {
+            "title": "BBSRC International Travel Award Scheme for the Biological Sciences",
+            "url": "https://www.ukri.org/opportunity/bbsrc-international-travel-award-scheme/",
+            "summary": (
+                "Travel and subsistence for collaborations and visits to overseas "
+                "research facilities; limited to eligible BBSRC-supported researchers."
+            ),
+            "eligibility": "Current BBSRC grant holders or researchers at BBSRC-supported institutes; not students.",
+            "programme": "BBSRC international travel award",
+            "amount": "Up to £3,000",
+        },
+        {
+            "title": "EPSRC Overseas Travel Grant",
+            "url": "https://www.ukri.org/opportunity/epsrc-overseas-travel-grant/",
+            "summary": (
+                "Supports international travel and subsistence to learn techniques "
+                "or develop collaborations, but not solely conference attendance."
+            ),
+            "eligibility": "Researchers and institutions eligible under EPSRC rules.",
+            "programme": "EPSRC overseas travel grant",
+        },
+    ),
+    # SSA is fully covered through its funding directory and individual scheme
+    # pages; do not duplicate its travelling scholarship or bursary listings.
+    "SSA": (),
+}
+
 
 FUNDER_NAMES = {
     "The British Academy": "The British Academy",
@@ -49,6 +141,8 @@ ALLOWED_HOSTS = {
     "ukri.org",
     "www.addiction-ssa.org",
     "addiction-ssa.org",
+    "sphr.nihr.ac.uk",
+    "cambridgebrc.nihr.ac.uk",
 }
 
 TOPIC_PATTERNS = {
@@ -78,6 +172,39 @@ TOPIC_PATTERNS = {
         r"\btrauma\b", r"\bco-?morbid(?:ity|ities)\b",
     ],
 }
+
+# Funding support is separate from research topic: general travel support
+# may be useful to NARA researchers even when addiction is not in its title.
+SUPPORT_TYPES = ("Transport funding", "Bursaries", "Travel allowances")
+SUPPORT_PATTERNS = {
+    "Transport funding": [
+        r"\btransport(?:ation)?\s+(?:costs?|expenses?|funding|allowance|support)\b",
+        r"\btravel\s+(?:costs?|expenses?|reimbursements?|funding|support)\b",
+        r"\b(?:rail|train|bus|flight|airfare|mileage)\s+(?:costs?|expenses?|reimbursement)\b",
+        r"\b(?:travel|transport)\s+(?:and|&)\s+(?:subsistence|accommodation)\b",
+        r"\btravell?ing\s+(?:scholarship|bursary|grant)\b",
+        r"\btravel\s+(?:award|grant|bursary|scholarship|support|funding)\b",
+    ],
+    "Bursaries": [r"\bbursar(?:y|ies)\b"],
+    "Travel allowances": [
+        r"\btravel\s+(?:allowance|grant|bursary|scholarship|stipend|expenses?|costs?|support|funding)s?\b",
+        r"\binternational travel awards?\b",
+        r"\boverseas travel grants?\b",
+        r"\btravell?ing\s+scholarships?\b",
+        r"\btravel\s+(?:and|&)\s+(?:subsistence|accommodation)\b",
+        r"\b(?:conference|research|fieldwork)\s+(?:travel|attendance)\s+(?:funding|support|costs?|expenses?)\b",
+        r"\bconference\s+(?:costs?|fees?)\s+(?:including|and)\s+travel\b",
+    ],
+}
+# A plain "travel" mention, or an exclusion of standalone travel, is NOT an award.
+NEGATIVE_SUPPORT_PATTERNS = (
+    r"(?:do not|don't|does not|doesn't|will not|won't|cannot|can't|not)\s+(?:usually\s+)?fund\s+(?:standalone\s+)?(?:travel|conference|transport)",
+    r"\b(?:travel|conference|transport)(?:\s+and\s+conference)?\s+(?:costs?|expenses?|fees?)\s+(?:are\s+)?(?:not eligible|not funded|excluded)",
+)
+DEDICATED_PATTERNS = (
+    r"\bbursar(?:y|ies)\b",
+    r"\b(?:travel|travelling|transport|overseas travel|international travel)\s+(?:award|grant|scholarship|bursary|allowance|fund|funding|support|scheme)\b",
+)
 
 # Verified SSA programme URLs. Some cards on its directory wrap their
 # headings in non-standard anchors, so these also provide safe fallbacks.
@@ -141,6 +268,9 @@ class Opportunity:
     ai_relevant: bool | None = None
     ai_summary: str = ""
     ai_reason: str = ""
+    funding_types: tuple[str, ...] = ()
+    support_basis: str = "Not specified"
+    support_evidence: str = ""
 
 
 def _session() -> requests.Session:
@@ -180,6 +310,19 @@ def _get_html(session: requests.Session, url: str, params: dict | None = None) -
 
 def _clean(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _canonical_url(url: str) -> str:
+    """Normalise only host, trailing slash and fragments for safe de-duplication.
+
+    A page returned through a directory may have a trailing slash while a
+    curated direct-scheme URL does not. They refer to the same opportunity.
+    Query parameters stay intact because some sites distinguish their calls
+    with those parameters.
+    """
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/") or "/"
+    return parsed._replace(netloc=parsed.netloc.lower(), path=path, fragment="").geturl()
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -263,7 +406,11 @@ def _valid_funding_href(href: str, source: str) -> bool:
             and path != "/funding"
         )
     if source == "NIHR":
-        return path.startswith("/funding/") and path.count("/") >= 2
+        return (
+            (path.startswith("/funding/") and path.count("/") >= 2)
+            or path.startswith("/funding-opportunities/")
+            or path.startswith("/career-development/research-career-funding-programmes/")
+        )
     if source == "UKRI":
         return path.startswith("/opportunity/") and path != "/opportunity"
     if source == "Wellcome":
@@ -448,6 +595,73 @@ def enrich_ssa_opportunity(opportunity: Opportunity, html: str) -> Opportunity:
     return opportunity
 
 
+def parse_nihr_specialist_listing(html: str, base_url: str) -> list[Opportunity]:
+    """Read NIHR Three Schools calls and Cambridge BRC's NIHR award guide.
+
+    For the Cambridge guide we report opportunities with status Unknown because
+    a description of a funding programme is not evidence a round is open.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for unwanted in soup(["script", "style", "noscript", "svg", "nav", "footer", "form"]):
+        unwanted.decompose()
+    main = soup.find("main") or soup.find("article") or soup
+    seen: set[str] = set()
+    items = []
+    is_cambridge = "cambridgebrc.nihr.ac.uk" in urlparse(base_url).netloc
+    headings = main.find_all(["h2"] if is_cambridge else ["h3", "h4"])
+
+    for heading in headings:
+        title = _clean(heading.get_text(" ", strip=True))
+        if len(title) < 9 or len(title) > 120:
+            continue
+        if re.search(r"(?:latest news|more information|other funding|related content|you may also)", title, re.I):
+            continue
+        if is_cambridge and not re.search(r"award|fund|fellowship|lectureship|support", title, re.I):
+            continue
+
+        # Collect text and links only until the next heading at the same level.
+        chunks = []
+        anchors = []
+        for item in heading.next_elements:
+            if item is heading:
+                continue
+            if isinstance(item, Tag) and item.name == heading.name:
+                break
+            if isinstance(item, Tag) and item.name in {"p", "li"}:
+                part = _clean(item.get_text(" ", strip=True))
+                if part and (not chunks or part != chunks[-1]):
+                    chunks.append(part)
+            if isinstance(item, Tag) and item.name == "a" and item.get("href"):
+                anchors.append(item)
+            if len(" ".join(chunks)) > 1800:
+                break
+        text = _clean(" ".join(chunks))[:1800]
+        if not text or (not is_cambridge and not re.search(r"fund|award|grant|application|placement|fellowship|bursar", title + " " + text, re.I)):
+            continue
+        valid_links = [urljoin(base_url, a["href"]) for a in anchors
+                       if urlparse(urljoin(base_url, a["href"])).hostname in ALLOWED_HOSTS]
+        url = next((link for link in valid_links if re.search(r"fund|award|research|career|support|placement", urlparse(link).path, re.I)),
+                   valid_links[0] if valid_links else base_url)
+        # Distinct page anchors are used only as a last resort for guide entries.
+        unique_key = title.casefold() if is_cambridge else url
+        if unique_key in seen:
+            continue
+        seen.add(unique_key)
+        deadline = _labelled_date(text, ["deadline for applications is(?: noon)?(?: friday)?", "closing date", "deadline", "applications close"])
+        if not deadline:
+            month = r"January|February|March|April|May|June|July|August|September|October|November|December"
+            match = re.search(rf"\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s*(\d{{1,2}})(?:st|nd|rd|th)?\s+({month})\s+(20\d{{2}})", text, re.I)
+            if match:
+                deadline = _parse_date(" ".join(match.groups()))
+        status = _normalise_status("", deadline) if deadline else "Unknown"
+        opportunity = Opportunity("NIHR", FUNDER_NAMES["NIHR"], title, url,
+                                  summary=text[:700], programme="NIHR regional / school funding",
+                                  deadline=deadline, status=status, amount=_extract_amount(text))
+        classify_opportunity(opportunity, extra_text=text)
+        items.append(opportunity)
+    return items
+
+
 def parse_listing(html: str, base_url: str, source: str) -> list[Opportunity]:
     if source == "SSA":
         return parse_ssa_listing(html, base_url)
@@ -457,11 +671,17 @@ def parse_listing(html: str, base_url: str, source: str) -> list[Opportunity]:
     opportunities: list[Opportunity] = []
     seen: set[str] = set()
 
+    # Scheme cards can say "Apply anytime" without opening/closing date labels.
     for heading in soup.find_all(["h2", "h3", "h4"]):
         title = _clean(heading.get_text(" ", strip=True))
         if len(title) < 5 or title.lower() in {"funding", "funding opportunities", "open for applications"}:
             continue
         container = _smallest_opportunity_container(heading, source)
+        if container is None and source == "Wellcome":
+            anchor = heading.find("a", href=True) or heading.find_parent("a", href=True)
+            if anchor is not None and _valid_funding_href(anchor.get("href", ""), source):
+                # A link to a genuine scheme is sufficient; date labels are optional.
+                container = heading.parent if isinstance(heading.parent, Tag) else heading
         if container is None:
             continue
         url = _find_url(heading, container, base_url, source)
@@ -477,6 +697,8 @@ def parse_listing(html: str, base_url: str, source: str) -> list[Opportunity]:
             re.I,
         )
         status = _normalise_status(status_match.group(1) if status_match else "", deadline)
+        if source == "Wellcome" and re.search(r"apply anytime|applications accepted year.round", text, re.I):
+            status = "Open"
         opportunities.append(
             Opportunity(
                 source=source,
@@ -510,7 +732,17 @@ def enrich_opportunity(opportunity: Opportunity, html: str) -> Opportunity:
     opportunity.deadline = opportunity.deadline or _labelled_date(
         text, ["closing date", "deadline date", "deadline", "applications close"]
     )
-    opportunity.status = _normalise_status(text[:1000], opportunity.deadline)
+    status_match = re.search(
+        r"\b(?:opportunity|funding) status\s*:?\s*(closing soon|opening soon|upcoming|closed|open)\b",
+        text[:4000], flags=re.I,
+    )
+    status_text = status_match.group(1) if status_match else text[:1000]
+    opportunity.status = _normalise_status(status_text, opportunity.deadline)
+    if opportunity.source == "Wellcome" and re.search(
+        r"apply anytime|applications (?:can be submitted at any time|are accepted year.round)",
+        text[:2500], re.I,
+    ):
+        opportunity.status = "Open"
     opportunity.amount = opportunity.amount or _extract_amount(text)
     eligibility = _section_text(soup, r"^(eligibility|who can apply)")
     if eligibility:
@@ -525,6 +757,46 @@ def enrich_opportunity(opportunity: Opportunity, html: str) -> Opportunity:
             opportunity.summary = opportunity.summary or candidate[:700]
             break
     classify_opportunity(opportunity, extra_text=text)
+    return opportunity
+
+
+def classify_funding_support(opportunity: Opportunity, extra_text: str = "") -> Opportunity:
+    """Identify dedicated awards versus eligible expenses in bigger grants.
+
+    Treat funding exclusions as negative evidence, not advertised support.
+    Travel/support terms are matched in local text windows rather than counting
+    every use of the word 'travel' across an entire funding policy.
+    """
+    title = _clean(opportunity.title + " " + opportunity.programme)
+    description = _clean(" ".join([opportunity.summary, opportunity.eligibility, extra_text]))
+    dedicated = bool(any(re.search(p, title, re.I) for p in DEDICATED_PATTERNS))
+    categories = []
+    evidence = ""
+    for category, patterns in SUPPORT_PATTERNS.items():
+        title_hit = next((re.search(pattern, title, re.I) for pattern in patterns
+                          if re.search(pattern, title, re.I)), None)
+        description_hit = next((re.search(pattern, description, re.I) for pattern in patterns
+                                if re.search(pattern, description, re.I)), None)
+        hit, text = (title_hit, title) if title_hit else (description_hit, description)
+        if not hit:
+            continue
+        window = text[max(0, hit.start() - 100): min(len(text), hit.end() + 110)]
+        # Exclusion of standalone travel is different from travel being eligible
+        # under a broader award; only reject when a negative statement is all
+        # that is evidenced in this local window.
+        if not title_hit and any(re.search(p, window, re.I) for p in NEGATIVE_SUPPORT_PATTERNS):
+            continue
+        categories.append(category)
+        if not evidence:
+            evidence = _clean(window)
+
+    opportunity.funding_types = tuple(categories)
+    opportunity.support_basis = (
+        "Dedicated bursary / travel award" if categories and dedicated
+        else "Eligible costs within a broader award" if categories
+        else "Not specified"
+    )
+    opportunity.support_evidence = evidence
     return opportunity
 
 
@@ -550,40 +822,65 @@ def classify_opportunity(opportunity: Opportunity, extra_text: str = "") -> Oppo
     opportunity.matched_keywords = tuple(dict.fromkeys(matched_keywords))
     opportunity.broad_call = broad
     opportunity.relevance_score = min(100, len(opportunity.matched_topics) * 25 + len(opportunity.matched_keywords) * 5 + (10 if broad else 0))
+    classify_funding_support(opportunity, extra_text=extra_text)
     return opportunity
 
 
 def _fetch_source(source: str, max_pages: int, enrich_details: bool) -> tuple[list[Opportunity], list[str]]:
+    """Fetch a funder's index, specialist listings and verified programme pages.
+
+    Each page is actually retrieved. If access fails we show a source warning,
+    not a fictional opportunity. Direct programme pages are always inspected
+    because their funding type may be absent from the source's main index.
+    """
     if source not in SOURCE_URLS:
         return [], [f"Unsupported funding source: {source}"]
+
     base_url = SOURCE_URLS[source]
     session = _session()
     opportunities: list[Opportunity] = []
     errors: list[str] = []
     known_urls: set[str] = set()
 
-    # SSA has one programme directory; each programme supplies its own status.
+    # SSA uses a single directory. NIHR also has training and regional awards
+    # pages that are outside the main NIHR research funding listings.
     page_count = 1 if source == "SSA" else max_pages
-    for page_number in range(1, page_count + 1):
+    pages = [(base_url, n) for n in range(1, page_count + 1)]
+    if source == "NIHR":
+        pages.extend((url, 1) for url in NIHR_EXTRA_PAGES)
+
+    no_more_main_pages = False
+    for page_url, page_number in pages:
+        if page_url == base_url and no_more_main_pages:
+            continue
         try:
-            if source == "SSA":
+            if source == "SSA" or page_url != base_url:
                 params = None
             elif source in {"NIHR", "UKRI", "Wellcome"}:
                 params = {"page": page_number} if page_number > 1 else None
             else:
                 params = {"page": page_number, "order": "-last_published_at"} if page_number > 1 else None
-            html = _get_html(session, base_url, params=params)
-            page_items = parse_listing(html, base_url, source)
-            new_items = [item for item in page_items if item.url not in known_urls]
-            if not new_items:
-                break
+
+            html = _get_html(session, page_url, params=params)
+            if source == "NIHR" and page_url in NIHR_EXTRA_PAGES:
+                page_items = parse_nihr_specialist_listing(html, page_url)
+            else:
+                page_items = parse_listing(html, page_url, source)
+            new_items = [item for item in page_items if _canonical_url(item.url) not in known_urls]
+            if not new_items and page_url == base_url:
+                no_more_main_pages = True
+                continue
             for item in new_items:
-                known_urls.add(item.url)
+                known_urls.add(_canonical_url(item.url))
                 opportunities.append(item)
         except Exception as exc:
-            errors.append(f"{source}, page {page_number}: {type(exc).__name__}: {exc}")
-            break
+            errors.append(f"{source} ({page_url}), page {page_number}: {type(exc).__name__}: {exc}")
+            if page_url == base_url:
+                no_more_main_pages = True
 
+    # Read a capped number of directory results to avoid excessive requests.
+    # Even with detail-reading switched off, source listings are still tagged
+    # using their available summaries/titles.
     if enrich_details:
         for index, opportunity in enumerate(opportunities[:40]):
             try:
@@ -596,6 +893,35 @@ def _fetch_source(source: str, max_pages: int, enrich_details: bool) -> tuple[li
     else:
         for opportunity in opportunities:
             classify_opportunity(opportunity)
+
+    # Some societies have dedicated travel schemes which never appear near the
+    # top of their general research-call feed. Fetch those official pages too.
+    # They are NEVER considered verified/open until the page is accessible.
+    for programme in FEATURED_PROGRAMMES.get(source, ()):
+        url = programme["url"]
+        if _canonical_url(url) in known_urls:
+            continue
+        try:
+            html = _get_html(session, url)
+            item = Opportunity(
+                source=source,
+                funder=FUNDER_NAMES[source],
+                title=programme["title"],
+                url=url,
+                summary=programme["summary"],
+                eligibility=programme.get("eligibility", ""),
+                programme=programme.get("programme", ""),
+                amount=programme.get("amount", ""),
+                status="Unknown",
+            )
+            # Parse the LIVE programme page to refresh status, amount and
+            # eligibility where available and categorise its funding support.
+            item = enrich_opportunity(item, html)
+            opportunities.append(item)
+            known_urls.add(_canonical_url(url))
+            time.sleep(0.08)
+        except Exception as exc:
+            errors.append(f"{source} programme ({url}): {type(exc).__name__}: {exc}")
 
     return opportunities, errors
 
@@ -612,7 +938,7 @@ def fetch_all_sources(
         items, source_errors = _fetch_source(source, max_pages=max_pages, enrich_details=enrich_details)
         all_items.extend(items)
         errors.extend(source_errors)
-    deduped = {item.url: item for item in all_items}
+    deduped = {_canonical_url(item.url): item for item in all_items}
     return list(deduped.values()), errors
 
 
@@ -653,18 +979,32 @@ def filter_opportunities(
     custom_start: date | None = None,
     custom_end: date | None = None,
     use_ai_relevance: bool = False,
+    funding_types: list[str] | None = None,
+    include_general_support: bool = True,
+    support_arrangement: str = "Any arrangement",
 ) -> list[Opportunity]:
     terms = _custom_terms(custom_query)
+    wanted_types = set(funding_types or ())
     results = []
     for opportunity in opportunities:
         searchable = " ".join(
             [opportunity.title, opportunity.summary, opportunity.programme, opportunity.eligibility]
         ).lower()
+        support_match = bool(set(opportunity.funding_types) & wanted_types) if wanted_types else bool(opportunity.funding_types)
+        if wanted_types and not support_match:
+            continue
+        # Restrict to dedicated grants or eligible expenses when requested.
+        if support_arrangement == "Dedicated awards only" and not opportunity.support_basis.startswith("Dedicated"):
+            continue
+        if support_arrangement == "Costs within larger grants only" and not opportunity.support_basis.startswith("Eligible"):
+            continue
         selected_topic_match = bool(set(topics) & set(opportunity.matched_topics))
         custom_match = bool(terms) and any(term in searchable for term in terms)
-        relevance_match = selected_topic_match or custom_match or (include_broad and opportunity.broad_call)
-        if not topics and not terms:
-            relevance_match = include_broad and opportunity.broad_call
+        relevance_match = (selected_topic_match or custom_match or
+                           (include_broad and opportunity.broad_call) or
+                           (include_general_support and support_match))
+        if not topics and not terms and not wanted_types:
+            relevance_match = (include_broad and opportunity.broad_call) or (include_general_support and support_match)
         if not relevance_match:
             continue
         if use_ai_relevance and opportunity.ai_relevant is False:
@@ -697,6 +1037,9 @@ def records_to_dataframe(opportunities: list[Opportunity]) -> pd.DataFrame:
                 "Deadline": item.deadline.isoformat() if item.deadline else "",
                 "Programme": item.programme,
                 "Matched topics": ", ".join(item.matched_topics) or ("Broad remit" if item.broad_call else ""),
+                "Funding support": ", ".join(item.funding_types),
+                "Support arrangement": item.support_basis,
+                "Support evidence": item.support_evidence,
                 "Matched keywords": ", ".join(item.matched_keywords),
                 "Amount": item.amount,
                 "Summary": item.summary,

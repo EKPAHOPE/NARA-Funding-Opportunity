@@ -16,7 +16,8 @@ import streamlit as st
 
 # This account alone can sign in. Matching ignores email case only.
 LOGIN_EMAIL = "NARA-CAMHR@hull.ac.uk"
-
+# PBKDF2-SHA256 hash of the initially requested password (not plaintext).
+# Production deployments should override using APP_PASSWORD_HASH.
 DEFAULT_PASSWORD_HASH = (
     "pbkdf2_sha256$480000$8OcHvKSVU7Mh2_PZuouEIg$"
     "LfW8jqvJ0_iALSu_vHzCGvJOUmFPyxpxuRe-46xPm88"
@@ -87,7 +88,7 @@ def require_login() -> None:
     with middle:
         st.markdown('<div class="login-heading">NARA Funding Finder</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="login-subtitle">Secure access for the NARA member team</div>',
+            '<div class="login-subtitle">Secure access for the NARA-CAMHR team</div>',
             unsafe_allow_html=True,
         )
         with st.form("nara_login_form", clear_on_submit=False):
@@ -113,7 +114,7 @@ def require_login() -> None:
                     st.error("Too many failed attempts. Please try again in a minute.")
                 else:
                     st.error("Incorrect email address or password.")
-        st.caption("This funding finder is restricted to authorised NARA member access.")
+        st.caption("This funding finder is restricted to authorised NARA-CAMHR access.")
     st.stop()
 
 
